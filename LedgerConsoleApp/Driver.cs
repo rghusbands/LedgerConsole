@@ -11,13 +11,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Runtime.Caching;
 
 namespace LedgerConsoleApp
 {
     /* 
      * Driver class runs console based ledger system.
      * Loops to allow for any number of users and transactions to occur
-     * 
+     * Stores user account info in MemoryCache in place of database 
      */
     class Driver
     {
@@ -41,8 +42,8 @@ namespace LedgerConsoleApp
             Console.WriteLine("Hello. Welcome to the World's Greatest Banking Ledger!" +
                 "\nNote: Commands are case sensitive.");
 
-            // Dictionary to hold user account information
-            Dictionary<string, UserAccount> userDict = new Dictionary<string, UserAccount>();
+            // Use local cache to store user information. Helps keep threadsafe for future
+            MemoryCache cache = MemoryCache.Default;
 
             // While loop to allow the system to keep running until users Exit
             while (KeepGoing)
@@ -51,7 +52,7 @@ namespace LedgerConsoleApp
                 if (curUser == null)
                 {
                     Console.WriteLine("Currently logged out. Please log in before using commands!");
-                    curUser = Login(userDict);
+                    curUser = Login(cache);
                 }
 
                 // Inform user of available options 
@@ -62,7 +63,7 @@ namespace LedgerConsoleApp
                 Console.Write("({0}) > ", curUser.username);
                 string cmd = Console.ReadLine();
 
-                // Completely terminate program with Exit       (POTENTIALLY CLEAR CACHE IDK)
+                // Completely terminate program with Exit
                 if (cmd.Equals("Exit"))
                 {
                     KeepGoing = false;
@@ -109,7 +110,7 @@ namespace LedgerConsoleApp
         }
 
         // Login method to handle user logins and ensure it's done properly
-        static UserAccount Login(Dictionary<string, UserAccount> dict)
+        static UserAccount Login(MemoryCache cache)
         {
             Console.Write("Username (type \"Create\" to create account): ");
             string userName = Console.ReadLine();
@@ -122,7 +123,7 @@ namespace LedgerConsoleApp
                 string newUser = Console.ReadLine();
 
                 // Make sure someone doesn't use the username "Create"
-                while (newUser.Equals("Create") || dict.ContainsKey(newUser))
+                while (newUser.Equals("Create") || cache.Contains(newUser))
                 {
                     Console.WriteLine("Invalid username (Could already be in use)");
                     Console.Write("Creating user account...\nType new username: ");
@@ -133,11 +134,11 @@ namespace LedgerConsoleApp
                 string newPswd = NewPassword();
 
                 // Create user and return UserAccount
-                return CreateUserAccount(newUser, newPswd, dict);
+                return CreateUserAccount(newUser, newPswd, cache);
             }
 
             // Check if username is in system
-            if (!dict.ContainsKey(userName))
+            if (!cache.Contains(userName))
             {
                 Console.WriteLine("Username is not in system. Please try again");
             }
@@ -150,7 +151,7 @@ namespace LedgerConsoleApp
                 string userPswd = Console.ReadLine();
 
                 // Get UserAccount from storage
-                UserAccount user = dict[userName];
+                UserAccount user = (UserAccount) cache.Get(userName);
 
                 // Check if the account password matches inputted password
                 if (user.CheckPassword(userPswd))
@@ -160,14 +161,18 @@ namespace LedgerConsoleApp
             }
 
             // Rerun login if fails
-            return Login(dict);
+            return Login(cache);
         }
 
         // Add a new user to UserAccount storage
-        static UserAccount CreateUserAccount(string name, string pswd, Dictionary<string, UserAccount> dict)
+        static UserAccount CreateUserAccount(string name, string pswd, MemoryCache cache)
         {
             UserAccount user = new UserAccount(name, pswd);
-            dict.Add(name, user);
+
+            // Prevent users from being removed
+            CacheItemPolicy policy = new CacheItemPolicy { Priority = CacheItemPriority.NotRemovable };
+
+            cache.Add(name, user, policy);
             return user;
         }
 
